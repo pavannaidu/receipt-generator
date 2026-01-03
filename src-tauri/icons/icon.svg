@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#0f3460"/>
+    </linearGradient>
+    <linearGradient id="paperGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#f0f0f0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#bgGrad)"/>
+
+  <!-- Receipt paper -->
+  <path d="M140 80 L372 80 L372 400 L356 385 L340 400 L324 385 L308 400 L292 385 L276 400 L260 385 L244 400 L228 385 L212 400 L196 385 L180 400 L164 385 L148 400 L140 400 Z"
+        fill="url(#paperGrad)"
+        stroke="#ddd"
+        stroke-width="2"/>
+
+  <!-- Receipt lines -->
+  <rect x="170" y="120" width="172" height="16" rx="4" fill="#1a1a2e" opacity="0.8"/>
+  <rect x="170" y="160" width="120" height="12" rx="3" fill="#666"/>
+  <rect x="170" y="190" width="140" height="12" rx="3" fill="#888"/>
+  <rect x="170" y="220" width="100" height="12" rx="3" fill="#888"/>
+
+  <!-- Divider line -->
+  <line x1="170" y1="255" x2="342" y2="255" stroke="#ccc" stroke-width="2" stroke-dasharray="8,4"/>
+
+  <!-- Total section -->
+  <rect x="170" y="280" width="60" height="14" rx="3" fill="#1a1a2e" opacity="0.6"/>
+  <rect x="280" y="275" width="62" height="20" rx="4" fill="#e94560"/>
+
+  <!-- Currency symbol (Rupee) -->
+  <text x="290" y="291" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white">₹</text>
+
+  <!-- Checkmark circle -->
+  <circle cx="380" cy="380" r="60" fill="#4ade80"/>
+  <path d="M350 380 L370 400 L410 355"
+        stroke="white"
+        stroke-width="12"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+</svg>
