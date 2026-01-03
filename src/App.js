@@ -15,7 +15,8 @@ import {
   DeleteModal,
   PrintPreviewModal,
   SalesChart,
-  BusinessSettingsModal
+  BusinessSettingsModal,
+  MergeModal
 } from './components';
 
 export default function ReceiptGenerator() {
@@ -24,7 +25,7 @@ export default function ReceiptGenerator() {
   // New data model: separate stock entries and item prices
   const [stockEntries, setStockEntries] = useState([]);
   const [itemPrices, setItemPrices] = useState([]);
-  const [newEntry, setNewEntry] = useState({ name: '', purchasePrice: '', quantity: '', date: getLocalDateString() });
+  const [newEntry, setNewEntry] = useState({ name: '', purchasePrice: '', quantity: '', date: getLocalDateString(), productGroup: '', provider: '' });
 
   const [currentReceipt, setCurrentReceipt] = useState({
     billNo: 1, date: getLocalDateString(), customerName: '', items: [], others: 0, roundOff: 0
@@ -49,11 +50,16 @@ export default function ReceiptGenerator() {
   const [editingReceipt, setEditingReceipt] = useState(null);
 
   // State for renaming items at group header level
-  const [renamingItem, setRenamingItem] = useState(null); // { oldName, newName }
+  const [renamingItem, setRenamingItem] = useState(null); // { oldName, newName, productGroup }
 
   // State for inventory collapsed view
   const [expandedItems, setExpandedItems] = useState({}); // { itemName: true/false }
   const [inventorySearch, setInventorySearch] = useState('');
+  const [inventoryGroupFilter, setInventoryGroupFilter] = useState('');
+  const [inventoryProviderFilter, setInventoryProviderFilter] = useState('');
+
+  // Merge modal state (for merging items when renaming to existing name)
+  const [mergeModal, setMergeModal] = useState({ show: false, oldName: '', targetName: '', oldEntries: [], targetEntries: [] });
 
   // State for history collapsed view
   const [expandedReceipts, setExpandedReceipts] = useState({}); // { receiptId: true/false }
@@ -75,6 +81,9 @@ export default function ReceiptGenerator() {
 
       if (tauriEnv) {
         try {
+          // Run database schema migrations for new columns
+          await db.migrateDatabase();
+
           // Check if migration from localStorage is needed
           const migrated = localStorage.getItem('receiptApp_migrated_to_sqlite');
           if (!migrated) {
@@ -121,7 +130,8 @@ export default function ReceiptGenerator() {
 
           setStockEntries(entries.map(e => ({
             id: e.id, name: e.name, purchasePrice: e.purchase_price,
-            quantity: e.quantity, remaining: e.remaining, date: e.date
+            quantity: e.quantity, remaining: e.remaining, date: e.date,
+            productGroup: e.product_group || '', provider: e.provider || ''
           })));
           setItemPrices(prices.map(p => ({
             id: p.id, name: p.name, sellingPrice: p.selling_price
@@ -142,7 +152,15 @@ export default function ReceiptGenerator() {
           const savedReceiptsData = localStorage.getItem('receiptApp_receipts');
           const savedBillNo = localStorage.getItem('receiptApp_billNo');
           const savedBusinessInfo = localStorage.getItem('receiptApp_business');
-          if (savedStockEntries) setStockEntries(JSON.parse(savedStockEntries));
+          if (savedStockEntries) {
+            // Migrate existing entries to include new fields
+            const entries = JSON.parse(savedStockEntries).map(e => ({
+              ...e,
+              productGroup: e.productGroup || '',
+              provider: e.provider || ''
+            }));
+            setStockEntries(entries);
+          }
           if (savedItemPrices) setItemPrices(JSON.parse(savedItemPrices));
           if (savedReceiptsData) setSavedReceipts(JSON.parse(savedReceiptsData));
           if (savedBillNo) setCurrentReceipt(prev => ({ ...prev, billNo: parseInt(savedBillNo) }));
@@ -177,7 +195,15 @@ export default function ReceiptGenerator() {
           setItemPrices(prices);
           localStorage.removeItem('receiptApp_catalog');
         } else {
-          if (savedStockEntries) setStockEntries(JSON.parse(savedStockEntries));
+          if (savedStockEntries) {
+            // Migrate existing entries to include new fields
+            const entries = JSON.parse(savedStockEntries).map(e => ({
+              ...e,
+              productGroup: e.productGroup || '',
+              provider: e.provider || ''
+            }));
+            setStockEntries(entries);
+          }
           if (savedItemPrices) setItemPrices(JSON.parse(savedItemPrices));
         }
 
@@ -234,22 +260,38 @@ export default function ReceiptGenerator() {
     });
   };
 
-  // Get entries grouped by item name
-  const getEntriesGroupedByItem = () => {
+  // Get unique product groups from stock entries
+  const getUniqueProductGroups = () => {
+    return [...new Set(stockEntries.map(e => e.productGroup).filter(Boolean))].sort();
+  };
+
+  // Get unique providers from stock entries
+  const getUniqueProviders = () => {
+    return [...new Set(stockEntries.map(e => e.provider).filter(Boolean))].sort();
+  };
+
+  // Get filtered inventory items for search and filters
+  const getFilteredInventoryItems = () => {
+    const searchLower = inventorySearch.toLowerCase();
+
+    // Filter by group and provider first
+    const filteredEntries = stockEntries.filter(entry => {
+      if (inventoryGroupFilter && entry.productGroup !== inventoryGroupFilter) return false;
+      if (inventoryProviderFilter && entry.provider !== inventoryProviderFilter) return false;
+      return true;
+    });
+
+    // Group filtered entries by item name
     const groups = {};
-    stockEntries.forEach(entry => {
+    filteredEntries.forEach(entry => {
       if (!groups[entry.name]) groups[entry.name] = [];
       groups[entry.name].push(entry);
     });
-    return groups;
-  };
 
-  // Get filtered inventory items for search
-  const getFilteredInventoryItems = () => {
-    const searchLower = inventorySearch.toLowerCase();
-    return Object.entries(getEntriesGroupedByItem())
+    // Apply name search and sort
+    return Object.entries(groups)
       .filter(([itemName]) => itemName.toLowerCase().includes(searchLower))
-      .sort(([a], [b]) => a.localeCompare(b)); // Sort alphabetically
+      .sort(([a], [b]) => a.localeCompare(b));
   };
 
   // Helper to get date string in YYYY-MM-DD format (local timezone)
@@ -323,13 +365,19 @@ export default function ReceiptGenerator() {
   const addStockEntry = async () => {
     if (!newEntry.name || !newEntry.quantity || parseFloat(newEntry.quantity) <= 0) return;
 
+    // If adding to an existing item, inherit its product group
+    const existingItem = stockEntries.find(e => e.name === newEntry.name.trim());
+    const productGroup = newEntry.productGroup?.trim() || existingItem?.productGroup || '';
+
     const entry = {
       id: Date.now(),
       name: newEntry.name.trim(),
       purchasePrice: parseFloat(newEntry.purchasePrice) || 0,
       quantity: parseFloat(newEntry.quantity),
       remaining: parseFloat(newEntry.quantity),
-      date: newEntry.date || getLocalDateString()
+      date: newEntry.date || getLocalDateString(),
+      productGroup: productGroup,
+      provider: newEntry.provider?.trim() || ''
     };
 
     if (isTauri) {
@@ -353,7 +401,7 @@ export default function ReceiptGenerator() {
     }
 
     setStockEntries(prev => [...prev, entry]);
-    setNewEntry({ name: '', purchasePrice: '', quantity: '', date: getLocalDateString() });
+    setNewEntry({ name: '', purchasePrice: '', quantity: '', date: getLocalDateString(), productGroup: '', provider: '' });
     showSuccess('Stock entry added!');
   };
 
@@ -407,44 +455,108 @@ export default function ReceiptGenerator() {
     showSuccess('Entry updated!');
   };
 
-  // Rename item handler (at group header level)
+  // Rename item handler (at group header level) - also updates product group
   const handleSaveRenameItem = async () => {
     if (!renamingItem || !renamingItem.newName.trim()) return;
-    const { oldName, newName } = renamingItem;
+    const { oldName, newName, productGroup } = renamingItem;
+    const newProductGroup = productGroup?.trim() || '';
 
-    // If name hasn't changed, just close
-    if (oldName === newName.trim()) {
+    // Check if name changed
+    const nameChanged = oldName !== newName.trim();
+
+    // If nothing changed, just close
+    if (!nameChanged && stockEntries.filter(e => e.name === oldName).every(e => e.productGroup === newProductGroup)) {
       setRenamingItem(null);
       return;
     }
 
-    // Check if new name already exists (prevent duplicates)
-    if (stockEntries.some(e => e.name === newName.trim() && e.name !== oldName)) {
-      showSuccess('An item with this name already exists!');
-      return;
+    // Check if new name already exists - show merge modal instead of error
+    if (nameChanged) {
+      const existingEntries = stockEntries.filter(e => e.name === newName.trim());
+      if (existingEntries.length > 0) {
+        const oldEntries = stockEntries.filter(e => e.name === oldName);
+        setMergeModal({
+          show: true,
+          oldName: oldName,
+          targetName: newName.trim(),
+          oldEntries: oldEntries,
+          targetEntries: existingEntries
+        });
+        return;
+      }
     }
 
     if (isTauri) {
       try {
-        await renameItem(oldName, newName.trim());
+        if (nameChanged) {
+          await renameItem(oldName, newName.trim());
+        }
+        // Update product group for all entries with this name
+        const entriesToUpdate = stockEntries.filter(e => e.name === oldName);
+        for (const entry of entriesToUpdate) {
+          await updateStockEntry({ ...entry, name: nameChanged ? newName.trim() : entry.name, productGroup: newProductGroup });
+        }
       } catch (err) {
-        console.error('Error renaming item:', err);
+        console.error('Error updating item:', err);
         return;
       }
     }
 
     // Update local state
-    setStockEntries(prev => prev.map(e => e.name === oldName ? { ...e, name: newName.trim() } : e));
-    setItemPrices(prev => prev.map(p => p.name === oldName ? { ...p, name: newName.trim() } : p));
-    // Also update historical receipts
+    setStockEntries(prev => prev.map(e => e.name === oldName ? { ...e, name: nameChanged ? newName.trim() : e.name, productGroup: newProductGroup } : e));
+    if (nameChanged) {
+      setItemPrices(prev => prev.map(p => p.name === oldName ? { ...p, name: newName.trim() } : p));
+      // Also update historical receipts
+      setSavedReceipts(prev => prev.map(receipt => ({
+        ...receipt,
+        items: receipt.items.map(item =>
+          item.name === oldName ? { ...item, name: newName.trim() } : item
+        )
+      })));
+    }
+    setRenamingItem(null);
+    showSuccess(nameChanged ? 'Item renamed!' : 'Product group updated!');
+  };
+
+  // Merge items handler (when renaming to an existing item name)
+  const handleConfirmMerge = async () => {
+    const { oldName, targetName } = mergeModal;
+
+    if (isTauri) {
+      try {
+        // Rename all old entries to target name (merges into target)
+        await renameItem(oldName, targetName);
+        // Delete the old item's price entry (target's price is preserved)
+        const oldPriceEntry = itemPrices.find(p => p.name === oldName);
+        if (oldPriceEntry) {
+          await db.deleteItemPrice(oldPriceEntry.id);
+        }
+      } catch (err) {
+        console.error('Error merging items:', err);
+        setMergeModal({ show: false, oldName: '', targetName: '', oldEntries: [], targetEntries: [] });
+        return;
+      }
+    }
+
+    // Update local state - all old entries get the target name
+    setStockEntries(prev => prev.map(e =>
+      e.name === oldName ? { ...e, name: targetName } : e
+    ));
+
+    // Remove old item's price entry (keep target's selling price)
+    setItemPrices(prev => prev.filter(p => p.name !== oldName));
+
+    // Update historical receipts
     setSavedReceipts(prev => prev.map(receipt => ({
       ...receipt,
       items: receipt.items.map(item =>
-        item.name === oldName ? { ...item, name: newName.trim() } : item
+        item.name === oldName ? { ...item, name: targetName } : item
       )
     })));
+
+    setMergeModal({ show: false, oldName: '', targetName: '', oldEntries: [], targetEntries: [] });
     setRenamingItem(null);
-    showSuccess('Item renamed!');
+    showSuccess(`Merged "${oldName}" into "${targetName}"!`);
   };
 
   // Update selling price
@@ -719,6 +831,16 @@ export default function ReceiptGenerator() {
         onConfirm={confirmDelete}
       />
 
+      <MergeModal
+        show={mergeModal.show}
+        mergeData={mergeModal}
+        onCancel={() => {
+          setMergeModal({ show: false, oldName: '', targetName: '', oldEntries: [], targetEntries: [] });
+          setRenamingItem(null);
+        }}
+        onConfirm={handleConfirmMerge}
+      />
+
       <PrintPreviewModal
         show={printPreviewModal.show}
         receipt={printPreviewModal.receipt}
@@ -948,7 +1070,8 @@ export default function ReceiptGenerator() {
             {/* Add Stock Entry Form */}
             <div style={{ background: 'rgba(233, 69, 96, 0.1)', borderRadius: '12px', padding: '20px', marginBottom: '25px', border: '1px solid rgba(233, 69, 96, 0.2)' }}>
               <h3 style={{ fontSize: '14px', marginBottom: '15px', fontWeight: '500' }}>Add Stock Entry</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '15px', alignItems: 'end' }}>
+              {/* Row 1: Core fields */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: '15px', marginBottom: '15px', alignItems: 'end' }}>
                 <div>
                   <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Item Name</label>
                   <input
@@ -975,6 +1098,37 @@ export default function ReceiptGenerator() {
                   <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Date</label>
                   <input type="date" value={newEntry.date} onChange={(e) => setNewEntry(prev => ({ ...prev, date: e.target.value }))} style={inputStyle} />
                 </div>
+              </div>
+              {/* Row 2: Product Group, Provider, Add button */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '15px', alignItems: 'end' }}>
+                <div>
+                  <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Product Group</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Electronics, Groceries"
+                    value={newEntry.productGroup}
+                    onChange={(e) => setNewEntry(prev => ({ ...prev, productGroup: e.target.value }))}
+                    list="product-groups"
+                    style={inputStyle}
+                  />
+                  <datalist id="product-groups">
+                    {getUniqueProductGroups().map(g => <option key={g} value={g} />)}
+                  </datalist>
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Provider</label>
+                  <input
+                    type="text"
+                    placeholder="Supplier name"
+                    value={newEntry.provider}
+                    onChange={(e) => setNewEntry(prev => ({ ...prev, provider: e.target.value }))}
+                    list="providers"
+                    style={inputStyle}
+                  />
+                  <datalist id="providers">
+                    {getUniqueProviders().map(p => <option key={p} value={p} />)}
+                  </datalist>
+                </div>
                 <button onClick={addStockEntry} style={btnPrimary}>+ Add</button>
               </div>
             </div>
@@ -993,6 +1147,47 @@ export default function ReceiptGenerator() {
                 <p style={{ fontSize: '11px', opacity: 0.7, marginBottom: '3px' }}>Value</p>
                 <p style={{ fontSize: '18px', fontWeight: '600', color: '#ff9f43' }}>₹{formatIndianCurrency(totalCostValue)}</p>
               </div>
+            </div>
+
+            {/* Filter Dropdowns */}
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', flexWrap: 'wrap', alignItems: 'end' }}>
+              <div style={{ minWidth: '160px' }}>
+                <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Product Group</label>
+                <select
+                  value={inventoryGroupFilter}
+                  onChange={(e) => setInventoryGroupFilter(e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">All Groups</option>
+                  {getUniqueProductGroups().map(group => (
+                    <option key={group} value={group}>{group}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ minWidth: '160px' }}>
+                <label style={{ fontSize: '11px', opacity: 0.7, display: 'block', marginBottom: '5px' }}>Provider</label>
+                <select
+                  value={inventoryProviderFilter}
+                  onChange={(e) => setInventoryProviderFilter(e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  <option value="">All Providers</option>
+                  {getUniqueProviders().map(provider => (
+                    <option key={provider} value={provider}>{provider}</option>
+                  ))}
+                </select>
+              </div>
+              {(inventoryGroupFilter || inventoryProviderFilter) && (
+                <button
+                  onClick={() => {
+                    setInventoryGroupFilter('');
+                    setInventoryProviderFilter('');
+                  }}
+                  style={{ ...btnSecondary, padding: '10px 16px', fontSize: '12px' }}
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
 
             {/* Search Box */}
@@ -1056,18 +1251,32 @@ export default function ReceiptGenerator() {
                             onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
                           >
                             {renamingItem?.oldName === itemName ? (
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
                                 <input
                                   type="text"
                                   value={renamingItem.newName}
                                   onChange={(e) => setRenamingItem(prev => ({ ...prev, newName: e.target.value }))}
-                                  style={{ ...inputStyle, padding: '4px 8px', width: '140px', fontSize: '13px' }}
+                                  style={{ ...inputStyle, padding: '4px 8px', width: '120px', fontSize: '13px' }}
                                   autoFocus
+                                  placeholder="Item name"
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') handleSaveRenameItem();
                                     if (e.key === 'Escape') setRenamingItem(null);
                                   }}
                                 />
+                                <input
+                                  type="text"
+                                  value={renamingItem.productGroup || ''}
+                                  onChange={(e) => setRenamingItem(prev => ({ ...prev, productGroup: e.target.value }))}
+                                  style={{ ...inputStyle, padding: '4px 8px', width: '100px', fontSize: '12px' }}
+                                  placeholder="Group"
+                                  list="rename-groups"
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveRenameItem();
+                                    if (e.key === 'Escape') setRenamingItem(null);
+                                  }}
+                                />
+                                <datalist id="rename-groups">{getUniqueProductGroups().map(g => <option key={g} value={g} />)}</datalist>
                                 <button onClick={handleSaveRenameItem} style={{ background: 'rgba(74,222,128,0.2)', border: 'none', color: '#4ade80', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>✓</button>
                                 <button onClick={() => setRenamingItem(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>✕</button>
                               </div>
@@ -1075,8 +1284,13 @@ export default function ReceiptGenerator() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ opacity: 0.4, fontSize: '10px' }}>{isExpanded ? '▼' : '▶'}</span>
                                 <span style={{ fontSize: '14px' }}>{itemName}</span>
+                                {entries[0]?.productGroup && (
+                                  <span style={{ padding: '2px 8px', background: 'rgba(233,69,96,0.2)', borderRadius: '10px', fontSize: '10px', color: '#e94560' }}>
+                                    {entries[0].productGroup}
+                                  </span>
+                                )}
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setRenamingItem({ oldName: itemName, newName: itemName }); }}
+                                  onClick={(e) => { e.stopPropagation(); setRenamingItem({ oldName: itemName, newName: itemName, productGroup: entries[0]?.productGroup || '' }); }}
                                   style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '2px 6px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px', opacity: 0.7 }}
                                 >
                                   ✎
@@ -1097,12 +1311,14 @@ export default function ReceiptGenerator() {
                                 <div key={entry.id} style={{ padding: '10px 15px 10px 35px', borderTop: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   {editingStockId === entry.id ? (
                                     <>
-                                      <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center' }}>
+                                      <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                                         <input type="date" value={editingStockData?.date || ''} onChange={(e) => setEditingStockData(prev => ({ ...prev, date: e.target.value }))} style={{ ...inputStyle, padding: '4px 8px', width: '120px', fontSize: '12px' }} />
                                         <input type="number" value={editingStockData?.quantity || ''} onChange={(e) => setEditingStockData(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))} style={{ ...inputStyle, padding: '4px 8px', width: '60px', fontSize: '12px' }} placeholder="Qty" />
                                         <span style={{ fontSize: '11px', opacity: 0.5 }}>@</span>
                                         <input type="number" value={editingStockData?.purchasePrice || ''} onChange={(e) => setEditingStockData(prev => ({ ...prev, purchasePrice: parseFloat(e.target.value) || 0 }))} style={{ ...inputStyle, padding: '4px 8px', width: '70px', fontSize: '12px' }} placeholder="Price" />
                                         <input type="number" value={editingStockData?.remaining || ''} onChange={(e) => setEditingStockData(prev => ({ ...prev, remaining: parseFloat(e.target.value) || 0 }))} style={{ ...inputStyle, padding: '4px 8px', width: '60px', fontSize: '12px' }} placeholder="Left" />
+                                        <input type="text" value={editingStockData?.provider || ''} onChange={(e) => setEditingStockData(prev => ({ ...prev, provider: e.target.value }))} style={{ ...inputStyle, padding: '4px 8px', width: '100px', fontSize: '12px' }} placeholder="Provider" list="edit-providers" />
+                                        <datalist id="edit-providers">{getUniqueProviders().map(p => <option key={p} value={p} />)}</datalist>
                                       </div>
                                       <div style={{ display: 'flex', gap: '6px' }}>
                                         <button onClick={handleSaveEditStock} style={{ background: 'rgba(74,222,128,0.2)', border: 'none', color: '#4ade80', padding: '3px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>Save</button>
@@ -1111,10 +1327,15 @@ export default function ReceiptGenerator() {
                                     </>
                                   ) : (
                                     <>
-                                      <div style={{ display: 'flex', gap: '20px', fontSize: '12px' }}>
+                                      <div style={{ display: 'flex', gap: '12px', fontSize: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <span style={{ opacity: 0.6 }}>{formatDate(entry.date)}</span>
                                         <span>{entry.quantity} @ ₹{formatIndianCurrency(entry.purchasePrice)}</span>
                                         <span style={{ color: entry.remaining > 0 ? '#4ade80' : '#ff6b6b' }}>({entry.remaining} left)</span>
+                                        {entry.provider && (
+                                          <span style={{ padding: '2px 8px', background: 'rgba(96,165,250,0.2)', borderRadius: '10px', fontSize: '10px', color: '#60a5fa' }}>
+                                            {entry.provider}
+                                          </span>
+                                        )}
                                       </div>
                                       <div style={{ display: 'flex', gap: '6px' }}>
                                         <button onClick={() => handleEditStock(entry)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '3px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '10px' }}>✎</button>

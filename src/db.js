@@ -53,6 +53,27 @@ export async function setDbPath(newPath) {
   await store.save();
 }
 
+// Migrate database schema for new columns
+export async function migrateDatabase() {
+  const database = await getDb();
+  try {
+    // Check if product_group column exists by attempting to select it
+    await database.select('SELECT product_group FROM stock_entries LIMIT 1');
+  } catch (e) {
+    // Column doesn't exist, add it
+    console.log('Adding product_group column to stock_entries');
+    await database.execute('ALTER TABLE stock_entries ADD COLUMN product_group TEXT DEFAULT ""');
+  }
+  try {
+    // Check if provider column exists
+    await database.select('SELECT provider FROM stock_entries LIMIT 1');
+  } catch (e) {
+    // Column doesn't exist, add it
+    console.log('Adding provider column to stock_entries');
+    await database.execute('ALTER TABLE stock_entries ADD COLUMN provider TEXT DEFAULT ""');
+  }
+}
+
 // Stock Entries
 export async function getAllStockEntries() {
   const database = await getDb();
@@ -62,8 +83,8 @@ export async function getAllStockEntries() {
 export async function addStockEntry(entry) {
   const database = await getDb();
   await database.execute(
-    'INSERT INTO stock_entries (id, name, purchase_price, quantity, remaining, date) VALUES ($1, $2, $3, $4, $5, $6)',
-    [entry.id, entry.name, entry.purchasePrice, entry.quantity, entry.remaining, entry.date]
+    'INSERT INTO stock_entries (id, name, purchase_price, quantity, remaining, date, product_group, provider) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+    [entry.id, entry.name, entry.purchasePrice, entry.quantity, entry.remaining, entry.date, entry.productGroup || '', entry.provider || '']
   );
 }
 
@@ -80,8 +101,8 @@ export async function deleteStockEntry(id) {
 export async function updateStockEntry(entry) {
   const database = await getDb();
   await database.execute(
-    'UPDATE stock_entries SET name = $1, purchase_price = $2, quantity = $3, remaining = $4, date = $5 WHERE id = $6',
-    [entry.name, entry.purchasePrice, entry.quantity, entry.remaining, entry.date, entry.id]
+    'UPDATE stock_entries SET name = $1, purchase_price = $2, quantity = $3, remaining = $4, date = $5, product_group = $6, provider = $7 WHERE id = $8',
+    [entry.name, entry.purchasePrice, entry.quantity, entry.remaining, entry.date, entry.productGroup || '', entry.provider || '', entry.id]
   );
 }
 
