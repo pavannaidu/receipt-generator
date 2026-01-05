@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { getLocalDateString } from '../utils/dateUtils';
 import { DATE_FILTER_OPTIONS } from '../constants/defaults';
 
@@ -25,7 +25,7 @@ export function useHistoryFilters({ savedReceipts }) {
   };
 
   // Get date range based on filter
-  const getDateRange = () => {
+  const getDateRange = useCallback(() => {
     const today = new Date();
     const todayStr = getDateString(today);
 
@@ -50,7 +50,7 @@ export function useHistoryFilters({ savedReceipts }) {
       default:
         return { from: todayStr, to: todayStr };
     }
-  };
+  }, [historyDateFilter, historyCustomRange]);
 
   // Get filtered receipts (memoized)
   const filteredReceipts = useMemo(() => {
@@ -80,7 +80,7 @@ export function useHistoryFilters({ savedReceipts }) {
       })
       .slice()
       .reverse(); // Most recent first
-  }, [savedReceipts, historySearch, historyDateFilter, historyCustomRange]);
+  }, [savedReceipts, historySearch, getDateRange]);
 
   // Toggle receipt expansion
   const toggleReceiptExpansion = (receiptId) => {

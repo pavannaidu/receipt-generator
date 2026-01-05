@@ -85,7 +85,7 @@ jobs:
         run: npm run tauri android init
 
       - name: Build Android APK (Debug)
-        run: npm run tauri android build -- --apk --debug
+        run: npm run tauri android build -- --apk true --debug
 
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v1
