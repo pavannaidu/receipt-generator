@@ -1,7 +1,10 @@
 import React from 'react';
-import { btnPrimary, btnSecondary } from '../styles/theme';
+import { useTheme, getThemedStyles } from '../contexts/ThemeContext';
 
 const MergeModal = ({ show, mergeData, onCancel, onConfirm }) => {
+  const { theme } = useTheme();
+  const { btnPrimary, btnSecondary } = getThemedStyles(theme);
+
   if (!show) return null;
 
   const { oldName, targetName, oldEntries, targetEntries } = mergeData;

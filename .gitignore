@@ -26,3 +26,9 @@ yarn-error.log*
 /src-tauri/target/
 /src-tauri/Cargo.lock
 /src-tauri/gen/schemas/
+
+# Android signing (keep private)
+/keystore/
+/src-tauri/gen/android/keystore.properties
+/src-tauri/gen/android/*.keystore
+/src-tauri/gen/android/*.jks

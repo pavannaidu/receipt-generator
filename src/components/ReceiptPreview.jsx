@@ -6,10 +6,20 @@ const ReceiptPreview = ({ receipt, businessInfo, calculateTotal }) => {
   const itemsTotal = receipt.items.reduce((sum, item) => sum + item.amount, 0);
   const total = receipt.total || (calculateTotal ? calculateTotal(receipt) : itemsTotal);
 
+  // Get business icon (custom emoji or initials)
+  const getIcon = () => {
+    if (businessInfo?.icon) return businessInfo.icon;
+    const name = businessInfo?.name || '';
+    if (!name) return '??';
+    const words = name.trim().split(/\s+/);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <div style={{ background: 'white', borderRadius: '16px', padding: '25px', color: '#333', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
       <div style={{ textAlign: 'center', marginBottom: '15px', paddingBottom: '15px', borderBottom: '2px solid #333' }}>
-        <div style={{ fontSize: '28px', fontWeight: '700', marginBottom: '5px' }}>ba</div>
+        <div style={{ fontSize: '28px', fontWeight: '700', marginBottom: '5px' }}>{getIcon()}</div>
         <div style={{ fontSize: '14px', fontWeight: '600', letterSpacing: '1px' }}>{businessInfo.name}</div>
         {businessInfo.address && <div style={{ fontSize: '11px', color: '#666' }}>{businessInfo.address}</div>}
         {businessInfo.phone && <div style={{ fontSize: '11px', color: '#666' }}>Ph: {businessInfo.phone}</div>}

@@ -1,8 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { inputStyle, btnPrimary, btnSecondary } from '../styles/theme';
 import { getDbPath, setDbPath, closeDb, isTauri } from '../db';
+import { useTheme, getThemedStyles } from '../contexts/ThemeContext';
+import { useIsMobile } from '../hooks/useMediaQuery';
+
+// Helper to get business initials from name
+const getBusinessInitials = (name) => {
+  if (!name) return '??';
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
+// Business icon preview component
+const BusinessIconPreview = ({ name, icon, theme }) => {
+  const initials = getBusinessInitials(name);
+  const displayIcon = icon || initials;
+  const isEmoji = /\p{Emoji}/u.test(displayIcon) && displayIcon.length <= 2;
+
+  return (
+    <div style={{
+      width: 44,
+      height: 44,
+      borderRadius: '10px',
+      background: `linear-gradient(135deg, ${theme.accent}, ${theme.accentHover})`,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: isEmoji ? 22 : 17,
+      fontWeight: '700',
+      color: 'white',
+      flexShrink: 0
+    }}>
+      {displayIcon}
+    </div>
+  );
+};
 
 const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
+  const { theme } = useTheme();
+  const { inputStyle, btnPrimary, btnSecondary } = getThemedStyles(theme);
+  const isMobile = useIsMobile();
   // Data location state
   const [currentDataPath, setCurrentDataPath] = useState('');
   const [newDataPath, setNewDataPath] = useState('');
@@ -99,9 +138,9 @@ const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
   const isTauriEnv = isTauri();
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#1a1a2e', padding: '30px', borderRadius: '16px', width: '450px', maxHeight: '90vh', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <h2 style={{ marginBottom: '20px', fontSize: '20px', color: 'white' }}>Business Settings</h2>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: isMobile ? '10px' : '20px' }}>
+      <div style={{ background: theme.name === 'dark' ? '#1a1a2e' : '#ffffff', padding: isMobile ? '20px' : '30px', borderRadius: '16px', width: isMobile ? '95vw' : '450px', maxWidth: '450px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
+        <h2 style={{ marginBottom: '20px', fontSize: '20px', color: theme.text }}>Business Settings</h2>
 
         {/* Business Info Section */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -133,26 +172,51 @@ const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
             onChange={(e) => onChange({ ...businessInfo, gstin: e.target.value })}
             style={inputStyle}
           />
+
+          {/* Icon Field */}
+          <div>
+            <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px', color: theme.text }}>
+              Icon (optional)
+            </label>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={businessInfo.icon || ''}
+                onChange={(e) => onChange({ ...businessInfo, icon: e.target.value })}
+                placeholder="Emoji or 2 letters"
+                maxLength={2}
+                style={{ ...inputStyle, width: '100px', textAlign: 'center', fontSize: '18px' }}
+              />
+              <BusinessIconPreview
+                name={businessInfo.name}
+                icon={businessInfo.icon}
+                theme={theme}
+              />
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                Leave blank to use initials
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Data Location Section - Only show in Tauri */}
         {isTauriEnv && (
-          <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '15px', color: 'white' }}>Data Location</h3>
+          <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: `1px solid ${theme.border}` }}>
+            <h3 style={{ fontSize: '16px', marginBottom: '15px', color: theme.text }}>Data Location</h3>
 
             {/* Current location display */}
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px', color: 'white' }}>
+              <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px', color: theme.text }}>
                 Current Location
               </label>
               <div style={{
                 padding: '10px 12px',
-                background: 'rgba(255,255,255,0.02)',
+                background: theme.surface,
                 borderRadius: '6px',
                 fontSize: '12px',
                 wordBreak: 'break-all',
-                color: '#888',
-                border: '1px solid rgba(255,255,255,0.1)'
+                color: theme.textMuted,
+                border: `1px solid ${theme.border}`
               }}>
                 {currentDataPath || 'Loading...'}
               </div>
@@ -160,7 +224,7 @@ const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
 
             {/* Folder picker */}
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px', color: 'white' }}>
+              <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '5px', color: theme.text }}>
                 New Location
               </label>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -189,7 +253,7 @@ const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
                       onChange={(e) => setMigrateData(e.target.checked)}
                       style={{ width: '16px', height: '16px' }}
                     />
-                    <span style={{ fontSize: '13px', color: 'white' }}>
+                    <span style={{ fontSize: '13px', color: theme.text }}>
                       Copy existing data to new location
                     </span>
                   </label>
@@ -237,19 +301,21 @@ const BusinessSettingsModal = ({ show, businessInfo, onChange, onSave }) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1001
+          zIndex: 1001,
+          padding: isMobile ? '10px' : '20px'
         }}>
           <div style={{
-            background: '#1a1a2e',
-            padding: '30px',
+            background: theme.name === 'dark' ? '#1a1a2e' : '#ffffff',
+            padding: isMobile ? '20px' : '30px',
             borderRadius: '16px',
-            width: '350px',
+            width: isMobile ? '95vw' : '350px',
+            maxWidth: '350px',
             textAlign: 'center',
-            border: '1px solid rgba(255,255,255,0.1)'
+            border: `1px solid ${theme.border}`
           }}>
             <div style={{ fontSize: '48px', marginBottom: '15px' }}>✅</div>
-            <h3 style={{ marginBottom: '10px', fontSize: '18px', color: 'white' }}>Restart Required</h3>
-            <p style={{ opacity: 0.7, marginBottom: '20px', fontSize: '14px', color: 'white' }}>
+            <h3 style={{ marginBottom: '10px', fontSize: '18px', color: theme.text }}>Restart Required</h3>
+            <p style={{ opacity: 0.7, marginBottom: '20px', fontSize: '14px', color: theme.text }}>
               Data location has been changed. Please restart the app to use the new location.
             </p>
             <button
