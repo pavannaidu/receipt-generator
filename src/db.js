@@ -30,8 +30,9 @@ export async function getDbPath() {
 export async function getDb() {
   if (!db) {
     const dbPath = await getDbPath();
-    // Use full path for custom locations, simple name for default
-    const connectionString = dbPath.includes(':') ? dbPath : `sqlite:${dbPath}`;
+    // Always use sqlite: prefix, convert backslashes to forward slashes for Windows paths
+    const normalizedPath = dbPath.replace(/\\/g, '/');
+    const connectionString = `sqlite:${normalizedPath}`;
     db = await Database.load(connectionString);
   }
   return db;
