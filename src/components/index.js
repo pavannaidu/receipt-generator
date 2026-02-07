@@ -1,3 +1,4 @@
+export { default as ErrorBoundary } from './ErrorBoundary';
 export { default as ReceiptPreview } from './ReceiptPreview';
 export { default as DeleteModal } from './DeleteModal';
 export { default as PrintPreviewModal } from './PrintPreviewModal';

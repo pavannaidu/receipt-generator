@@ -62,7 +62,6 @@ export async function migrateDatabase() {
     await database.select('SELECT product_group FROM stock_entries LIMIT 1');
   } catch (e) {
     // Column doesn't exist, add it
-    console.log('Adding product_group column to stock_entries');
     await database.execute('ALTER TABLE stock_entries ADD COLUMN product_group TEXT DEFAULT ""');
   }
   try {
@@ -70,7 +69,6 @@ export async function migrateDatabase() {
     await database.select('SELECT provider FROM stock_entries LIMIT 1');
   } catch (e) {
     // Column doesn't exist, add it
-    console.log('Adding provider column to stock_entries');
     await database.execute('ALTER TABLE stock_entries ADD COLUMN provider TEXT DEFAULT ""');
   }
 
@@ -88,9 +86,8 @@ export async function migrateToMultiBusiness() {
     // Check if businesses table exists
     await database.select('SELECT id FROM businesses LIMIT 1');
     tableExists = true;
-    console.log('Businesses table exists, checking schema...');
   } catch (e) {
-    console.log('Running multi-business migration...');
+    // Table doesn't exist yet, will create below
   }
 
   if (!tableExists) {
@@ -115,12 +112,10 @@ export async function migrateToMultiBusiness() {
   const hasIconColumn = columns.some(col => col.name === 'icon');
 
   if (!hasIconColumn) {
-    console.log('Adding icon column to businesses table...');
     try {
       await database.execute('ALTER TABLE businesses ADD COLUMN icon TEXT DEFAULT ""');
-      console.log('Icon column added successfully');
     } catch (alterError) {
-      console.error('Failed to add icon column:', alterError);
+      // Column may already exist in some edge cases
     }
   }
 
@@ -135,7 +130,6 @@ export async function migrateToMultiBusiness() {
     try {
       await database.select(`SELECT business_id FROM ${table} LIMIT 1`);
     } catch (e) {
-      console.log(`Adding business_id to ${table}`);
       await database.execute(`ALTER TABLE ${table} ADD COLUMN business_id INTEGER REFERENCES businesses(id)`);
     }
   }
@@ -163,7 +157,6 @@ export async function migrateToMultiBusiness() {
       'INSERT INTO businesses (id, name, address, phone, gstin, next_bill_no, created_at) VALUES (1, $1, $2, $3, $4, $5, $6)',
       [name, address, phone, gstin, nextBillNo, new Date().toISOString()]
     );
-    console.log('Created first business from existing data');
   }
 
   // Assign all existing records to business_id = 1
@@ -171,8 +164,6 @@ export async function migrateToMultiBusiness() {
   await database.execute('UPDATE item_prices SET business_id = 1 WHERE business_id IS NULL');
   await database.execute('UPDATE receipts SET business_id = 1 WHERE business_id IS NULL');
   await database.execute('UPDATE customers SET business_id = 1 WHERE business_id IS NULL');
-
-  console.log('Multi-business migration complete');
 }
 
 // ==================== BUSINESS CRUD ====================
@@ -198,10 +189,8 @@ export async function createBusiness(business) {
     // Get the last inserted ID
     const rows = await database.select('SELECT last_insert_rowid() as id');
     const newId = rows[0]?.id || result.lastInsertId;
-    console.log('Created business with ID:', newId);
     return newId;
   } catch (e) {
-    console.error('DB createBusiness error:', e);
     throw new Error(`Database error: ${e.message || e}`);
   }
 }
@@ -339,8 +328,27 @@ export async function getAllReceipts(businessId) {
   } else {
     receipts = await database.select('SELECT * FROM receipts ORDER BY saved_at DESC');
   }
+  if (receipts.length === 0) return receipts;
+
+  // Batch-load all receipt items in a single query instead of N+1
+  const receiptIds = receipts.map(r => r.id);
+  const placeholders = receiptIds.map((_, i) => `$${i + 1}`).join(',');
+  const allItems = await database.select(
+    `SELECT * FROM receipt_items WHERE receipt_id IN (${placeholders})`,
+    receiptIds
+  );
+
+  // Group items by receipt_id
+  const itemsByReceiptId = {};
+  for (const item of allItems) {
+    if (!itemsByReceiptId[item.receipt_id]) {
+      itemsByReceiptId[item.receipt_id] = [];
+    }
+    itemsByReceiptId[item.receipt_id].push(item);
+  }
+
   for (const receipt of receipts) {
-    receipt.items = await database.select('SELECT * FROM receipt_items WHERE receipt_id = $1', [receipt.id]);
+    receipt.items = itemsByReceiptId[receipt.id] || [];
   }
   return receipts;
 }
@@ -384,7 +392,7 @@ export async function updateReceipt(receipt) {
 export async function getBusinessInfo() {
   const database = await getDb();
   const rows = await database.select('SELECT * FROM business_info WHERE id = 1');
-  return rows[0] || { name: 'BALUS AERATORS', address: '', phone: '', gstin: '' };
+  return rows[0] || { name: 'My Business', address: '', phone: '', gstin: '' };
 }
 
 export async function updateBusinessInfo(info) {
@@ -470,7 +478,7 @@ export async function migrateCustomersTable() {
     `);
     await database.execute('CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)');
   } catch (e) {
-    console.log('Customers table already exists or error:', e);
+    // Table already exists
   }
 }
 

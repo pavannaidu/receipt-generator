@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import * as db from '../db';
+import { generateId } from '../utils/formatters';
 
 const STORAGE_KEY = 'receiptApp_customers';
 
@@ -49,7 +50,7 @@ export function useCustomerManagement({ isTauri, businessId }) {
   // Add new customer
   const addCustomer = useCallback(async (customer) => {
     const newCustomer = {
-      id: Date.now(),
+      id: generateId(),
       name: customer.name.trim(),
       phone: customer.phone?.trim() || '',
       address: customer.address?.trim() || ''
@@ -145,7 +146,7 @@ export function useCustomerManagement({ isTauri, businessId }) {
     const newCustomer = { name: trimmedName, phone: '', address: '' };
     const success = await addCustomer(newCustomer);
     if (success) {
-      return { ...newCustomer, id: Date.now() };
+      return { ...newCustomer, id: generateId() };
     }
     return null;
   }, [customers, addCustomer]);
