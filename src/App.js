@@ -14,7 +14,7 @@ import {
 } from './hooks';
 
 // Utils
-import { formatIndianCurrency } from './utils/formatters';
+import { formatIndianCurrency, generateId } from './utils/formatters';
 import { formatDate } from './utils/dateUtils';
 import { exportReceiptToPDF } from './utils/pdfExport';
 
@@ -222,7 +222,7 @@ export default function ReceiptGenerator() {
   const addItemToReceipt = () => {
     if (newItem.name && newItem.qty > 0 && newItem.rate > 0) {
       const item = {
-        id: Date.now(),
+        id: generateId(),
         name: newItem.name,
         qty: parseFloat(newItem.qty),
         rate: parseFloat(newItem.rate),
@@ -298,7 +298,7 @@ export default function ReceiptGenerator() {
       showSuccess('Receipt updated!');
     } else {
       // CREATING NEW RECEIPT
-      const receipt = { ...currentReceipt, id: Date.now(), total: calculateTotal(), savedAt: new Date().toISOString() };
+      const receipt = { ...currentReceipt, id: generateId(), total: calculateTotal(), savedAt: new Date().toISOString() };
 
       if (isTauri) {
         try {

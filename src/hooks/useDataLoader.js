@@ -141,19 +141,21 @@ export function useDataLoader(businessId) {
     const oldBusiness = localStorage.getItem(STORAGE_KEYS.BUSINESS);
     const oldBillNo = localStorage.getItem(STORAGE_KEYS.BILL_NO);
 
+    // Default to business 1 for migrated data
+    const defaultBizId = 1;
     if (oldEntries) {
       for (const e of JSON.parse(oldEntries)) {
-        await db.addStockEntry(e);
+        await db.addStockEntry(e, defaultBizId);
       }
     }
     if (oldPrices) {
       for (const p of JSON.parse(oldPrices)) {
-        await db.upsertItemPrice(p.id, p.name, p.sellingPrice);
+        await db.upsertItemPrice(p.id, p.name, p.sellingPrice, defaultBizId);
       }
     }
     if (oldReceipts) {
       for (const r of JSON.parse(oldReceipts)) {
-        await db.addReceipt(r);
+        await db.addReceipt(r, defaultBizId);
       }
     }
     if (oldBusiness) {

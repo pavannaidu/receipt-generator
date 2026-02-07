@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import { escapeHtml } from './formatters';
 
 // Check if running in Tauri v2
 const isTauri = typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
@@ -23,16 +24,16 @@ export async function exportReceiptToPDF(receipt, businessInfo, formatCurrency, 
     <div style="max-width: 400px; margin: 0 auto; color: #333;">
       <div style="text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #333;">
         <div style="font-size: 32px; font-weight: 700; color: #e94560;">ba</div>
-        <div style="font-size: 18px; font-weight: 500; letter-spacing: 2px;">${businessInfo.name}</div>
-        ${businessInfo.address ? `<div style="font-size: 12px; color: #666;">${businessInfo.address}</div>` : ''}
-        ${businessInfo.phone ? `<div style="font-size: 12px; color: #666;">Ph: ${businessInfo.phone}</div>` : ''}
-        ${businessInfo.gstin ? `<div style="font-size: 12px; color: #666;">GSTIN: ${businessInfo.gstin}</div>` : ''}
+        <div style="font-size: 18px; font-weight: 500; letter-spacing: 2px;">${escapeHtml(businessInfo.name)}</div>
+        ${businessInfo.address ? `<div style="font-size: 12px; color: #666;">${escapeHtml(businessInfo.address)}</div>` : ''}
+        ${businessInfo.phone ? `<div style="font-size: 12px; color: #666;">Ph: ${escapeHtml(businessInfo.phone)}</div>` : ''}
+        ${businessInfo.gstin ? `<div style="font-size: 12px; color: #666;">GSTIN: ${escapeHtml(businessInfo.gstin)}</div>` : ''}
         <div style="font-size: 14px; text-decoration: underline; margin-top: 10px;">ESTIMATE</div>
       </div>
 
       <div style="margin: 15px 0; padding: 10px 0; border-bottom: 1px dashed #ccc;">
         <div style="display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px;">
-          <span><strong>To:</strong> ${receipt.customerName || 'Walk-in Customer'}</span>
+          <span><strong>To:</strong> ${escapeHtml(receipt.customerName) || 'Walk-in Customer'}</span>
         </div>
         <div style="display: flex; justify-content: space-between; margin: 8px 0; font-size: 14px;">
           <span><strong>Bill Date:</strong> ${formatDate(receipt.date)}</span>
@@ -52,7 +53,7 @@ export async function exportReceiptToPDF(receipt, businessInfo, formatCurrency, 
         <tbody>
           ${receipt.items.map(item => `
             <tr>
-              <td style="padding: 8px 5px; border-bottom: 1px solid #eee;">${item.name}</td>
+              <td style="padding: 8px 5px; border-bottom: 1px solid #eee;">${escapeHtml(item.name)}</td>
               <td style="padding: 8px 5px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(item.qty)}</td>
               <td style="padding: 8px 5px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(item.rate)}</td>
               <td style="padding: 8px 5px; border-bottom: 1px solid #eee; text-align: right;">${formatCurrency(item.amount)}</td>

@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import * as db from '../db';
-import { formatIndianCurrency } from '../utils/formatters';
+import { formatIndianCurrency, generateId, escapeHtml } from '../utils/formatters';
 import { formatDate } from '../utils/dateUtils';
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { getDefaultReceipt, DEFAULT_NEW_ITEM } from '../constants/defaults';
@@ -27,11 +27,11 @@ export function useReceiptManagement({
   const [editingReceipt, setEditingReceipt] = useState(null);
 
   // Update bill number when nextBillNo changes (from data loader)
-  useState(() => {
+  useEffect(() => {
     if (nextBillNo && !editingReceipt) {
       setCurrentReceipt(prev => ({ ...prev, billNo: nextBillNo }));
     }
-  }, [nextBillNo]);
+  }, [nextBillNo, editingReceipt]);
 
   // Calculate receipt total
   const calculateTotal = useCallback((receipt = currentReceipt) => {
@@ -43,7 +43,7 @@ export function useReceiptManagement({
   const addItemToReceipt = useCallback(() => {
     if (newItem.name && newItem.qty > 0 && newItem.rate > 0) {
       const item = {
-        id: Date.now(),
+        id: generateId(),
         name: newItem.name,
         qty: parseFloat(newItem.qty),
         rate: parseFloat(newItem.rate),
@@ -131,7 +131,7 @@ export function useReceiptManagement({
       // CREATING NEW RECEIPT
       const receipt = {
         ...currentReceipt,
-        id: Date.now(),
+        id: generateId(),
         total: calculateTotal(),
         savedAt: new Date().toISOString()
       };
@@ -219,7 +219,7 @@ export function useReceiptManagement({
   // Generate print content
   const generatePrintContent = useCallback((receipt) => {
     const itemsTotal = receipt.items.reduce((sum, item) => sum + item.amount, 0);
-    return `<!DOCTYPE html><html><head><title>Receipt #${receipt.billNo}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:400px;margin:0 auto}.header{text-align:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #333}.logo{font-size:32px;font-weight:700}.business-name{font-size:18px;font-weight:500;letter-spacing:2px}.document-type{font-size:14px;text-decoration:underline;margin-top:10px}.info-row{display:flex;justify-content:space-between;margin:8px 0;font-size:14px}.customer-info{margin:15px 0;padding:10px 0;border-bottom:1px dashed #ccc}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:13px}th{background:#f8f8f8;padding:10px 5px;text-align:left;border-bottom:2px solid #333}th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right}td{padding:8px 5px;border-bottom:1px solid #eee}td:nth-child(2),td:nth-child(3),td:nth-child(4){text-align:right}.totals{margin-top:20px;border-top:2px solid #333;padding-top:15px}.total-row{display:flex;justify-content:space-between;padding:5px 0;font-size:14px}.total-row.final{font-weight:700;font-size:16px;border-top:1px solid #333;margin-top:10px;padding-top:10px}.footer{margin-top:30px;text-align:center;font-size:12px;color:#666}@media print{body{padding:0}}</style></head><body><div class="receipt"><div class="header"><div class="logo">ba</div><div class="business-name">${businessInfo.name}</div>${businessInfo.address ? `<div style="font-size:12px;color:#666">${businessInfo.address}</div>` : ''}${businessInfo.phone ? `<div style="font-size:12px;color:#666">Ph: ${businessInfo.phone}</div>` : ''}${businessInfo.gstin ? `<div style="font-size:12px;color:#666">GSTIN: ${businessInfo.gstin}</div>` : ''}<div class="document-type">ESTIMATE</div></div><div class="customer-info"><div class="info-row"><span><strong>To:</strong> ${receipt.customerName || 'Walk-in Customer'}</span></div><div class="info-row"><span><strong>Bill Date:</strong> ${formatDate(receipt.date)}</span><span><strong>Bill No:</strong> ${receipt.billNo}</span></div></div><table><thead><tr><th style="width:45%">Particulars</th><th style="width:15%">Qty</th><th style="width:20%">Rate</th><th style="width:20%">Amount</th></tr></thead><tbody>${receipt.items.map(item => `<tr><td>${item.name}</td><td>${formatIndianCurrency(item.qty)}</td><td>${formatIndianCurrency(item.rate)}</td><td>${formatIndianCurrency(item.amount)}</td></tr>`).join('')}</tbody></table><div class="totals"><div class="total-row"><span>Bill Total</span><span>${formatIndianCurrency(itemsTotal)}</span></div><div class="total-row"><span>Others</span><span>${formatIndianCurrency(receipt.others || 0)}</span></div><div class="total-row"><span>Round Off</span><span>${formatIndianCurrency(receipt.roundOff || 0)}</span></div><div class="total-row final"><span>Net Amount</span><span>₹ ${formatIndianCurrency(receipt.total)}</span></div></div><div class="footer"><p>Thank you for your business!</p></div></div><script>window.onload=function(){window.print()}</script></body></html>`;
+    return `<!DOCTYPE html><html><head><title>Receipt #${receipt.billNo}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:20px}.receipt{max-width:400px;margin:0 auto}.header{text-align:center;margin-bottom:20px;padding-bottom:15px;border-bottom:2px solid #333}.logo{font-size:32px;font-weight:700}.business-name{font-size:18px;font-weight:500;letter-spacing:2px}.document-type{font-size:14px;text-decoration:underline;margin-top:10px}.info-row{display:flex;justify-content:space-between;margin:8px 0;font-size:14px}.customer-info{margin:15px 0;padding:10px 0;border-bottom:1px dashed #ccc}table{width:100%;border-collapse:collapse;margin:15px 0;font-size:13px}th{background:#f8f8f8;padding:10px 5px;text-align:left;border-bottom:2px solid #333}th:nth-child(2),th:nth-child(3),th:nth-child(4){text-align:right}td{padding:8px 5px;border-bottom:1px solid #eee}td:nth-child(2),td:nth-child(3),td:nth-child(4){text-align:right}.totals{margin-top:20px;border-top:2px solid #333;padding-top:15px}.total-row{display:flex;justify-content:space-between;padding:5px 0;font-size:14px}.total-row.final{font-weight:700;font-size:16px;border-top:1px solid #333;margin-top:10px;padding-top:10px}.footer{margin-top:30px;text-align:center;font-size:12px;color:#666}@media print{body{padding:0}}</style></head><body><div class="receipt"><div class="header"><div class="logo">ba</div><div class="business-name">${escapeHtml(businessInfo.name)}</div>${businessInfo.address ? `<div style="font-size:12px;color:#666">${escapeHtml(businessInfo.address)}</div>` : ''}${businessInfo.phone ? `<div style="font-size:12px;color:#666">Ph: ${escapeHtml(businessInfo.phone)}</div>` : ''}${businessInfo.gstin ? `<div style="font-size:12px;color:#666">GSTIN: ${escapeHtml(businessInfo.gstin)}</div>` : ''}<div class="document-type">ESTIMATE</div></div><div class="customer-info"><div class="info-row"><span><strong>To:</strong> ${escapeHtml(receipt.customerName) || 'Walk-in Customer'}</span></div><div class="info-row"><span><strong>Bill Date:</strong> ${formatDate(receipt.date)}</span><span><strong>Bill No:</strong> ${receipt.billNo}</span></div></div><table><thead><tr><th style="width:45%">Particulars</th><th style="width:15%">Qty</th><th style="width:20%">Rate</th><th style="width:20%">Amount</th></tr></thead><tbody>${receipt.items.map(item => `<tr><td>${escapeHtml(item.name)}</td><td>${formatIndianCurrency(item.qty)}</td><td>${formatIndianCurrency(item.rate)}</td><td>${formatIndianCurrency(item.amount)}</td></tr>`).join('')}</tbody></table><div class="totals"><div class="total-row"><span>Bill Total</span><span>${formatIndianCurrency(itemsTotal)}</span></div><div class="total-row"><span>Others</span><span>${formatIndianCurrency(receipt.others || 0)}</span></div><div class="total-row"><span>Round Off</span><span>${formatIndianCurrency(receipt.roundOff || 0)}</span></div><div class="total-row final"><span>Net Amount</span><span>₹ ${formatIndianCurrency(receipt.total)}</span></div></div><div class="footer"><p>Thank you for your business!</p></div></div><script>window.onload=function(){window.print()}</script></body></html>`;
   }, [businessInfo]);
 
   // Handle print

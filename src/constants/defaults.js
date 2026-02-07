@@ -2,7 +2,7 @@ import { getLocalDateString } from '../utils/dateUtils';
 
 // Default business info
 export const DEFAULT_BUSINESS_INFO = {
-  name: 'BALUS AERATORS',
+  name: 'My Business',
   address: '',
   phone: '',
   gstin: '',

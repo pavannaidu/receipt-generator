@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import * as db from '../db';
 import { updateStockEntry, renameItem } from '../db';
 import { getLocalDateString } from '../utils/dateUtils';
+import { generateId } from '../utils/formatters';
 
 /**
  * Custom hook for stock/inventory management
@@ -20,32 +21,44 @@ export function useStockManagement({
 }) {
   // Get unique items with aggregated data (memoized)
   const uniqueItems = useMemo(() => {
-    const names = [...new Set(stockEntries.map(e => e.name))];
-    return names.map(name => {
-      const entries = stockEntries.filter(e => e.name === name);
-      const totalStock = entries.reduce((sum, e) => sum + e.remaining, 0);
-      const totalCost = entries.reduce((sum, e) => sum + (e.purchasePrice * e.remaining), 0);
-      const avgCost = totalStock > 0 ? totalCost / totalStock : 0;
-      const priceEntry = itemPrices.find(p => p.name === name);
+    // Pre-index receipt sales data by item name (O(n) instead of O(n*m))
+    const salesByName = {};
+    for (const receipt of savedReceipts) {
+      for (const item of (receipt.items || [])) {
+        if (!salesByName[item.name]) {
+          salesByName[item.name] = { totalQty: 0, totalAmount: 0 };
+        }
+        salesByName[item.name].totalQty += item.qty;
+        salesByName[item.name].totalAmount += item.amount;
+      }
+    }
 
-      // Calculate average selling price from receipts
-      let totalQty = 0;
-      let totalAmount = 0;
-      savedReceipts.forEach(receipt => {
-        receipt.items.forEach(item => {
-          if (item.name === name) {
-            totalQty += item.qty;
-            totalAmount += item.amount;
-          }
-        });
-      });
-      const avgSellingPrice = totalQty > 0 ? totalAmount / totalQty : 0;
+    // Pre-index item prices by name
+    const pricesByName = {};
+    for (const p of itemPrices) {
+      pricesByName[p.name] = p.sellingPrice;
+    }
+
+    // Aggregate stock entries by name in a single pass
+    const itemMap = {};
+    for (const e of stockEntries) {
+      if (!itemMap[e.name]) {
+        itemMap[e.name] = { totalStock: 0, totalCost: 0 };
+      }
+      itemMap[e.name].totalStock += e.remaining;
+      itemMap[e.name].totalCost += e.purchasePrice * e.remaining;
+    }
+
+    return Object.entries(itemMap).map(([name, { totalStock, totalCost }]) => {
+      const avgCost = totalStock > 0 ? totalCost / totalStock : 0;
+      const sales = salesByName[name];
+      const avgSellingPrice = sales && sales.totalQty > 0 ? sales.totalAmount / sales.totalQty : 0;
 
       return {
         name,
         totalStock,
         avgCost,
-        sellingPrice: priceEntry?.sellingPrice || 0,
+        sellingPrice: pricesByName[name] || 0,
         avgSellingPrice
       };
     });
@@ -72,14 +85,17 @@ export function useStockManagement({
 
   // Add stock entry
   const addStockEntry = useCallback(async (newEntry) => {
-    if (!newEntry.name || !newEntry.quantity || parseFloat(newEntry.quantity) <= 0) return false;
+    const qty = parseFloat(newEntry.quantity);
+    const price = parseFloat(newEntry.purchasePrice);
+    if (!newEntry.name?.trim() || !newEntry.quantity || isNaN(qty) || qty <= 0) return false;
+    if (price < 0 || isNaN(price)) return false;
 
     // If adding to an existing item, inherit its product group
     const existingItem = stockEntries.find(e => e.name === newEntry.name.trim());
     const productGroup = newEntry.productGroup?.trim() || existingItem?.productGroup || '';
 
     const entry = {
-      id: Date.now(),
+      id: generateId(),
       name: newEntry.name.trim(),
       purchasePrice: parseFloat(newEntry.purchasePrice) || 0,
       quantity: parseFloat(newEntry.quantity),
@@ -94,7 +110,7 @@ export function useStockManagement({
         await db.addStockEntry(entry, businessId);
         // Auto-create price entry if new item
         if (!itemPrices.find(p => p.name === entry.name)) {
-          const priceEntry = { id: Date.now() + 1, name: entry.name, sellingPrice: 0 };
+          const priceEntry = { id: generateId(), name: entry.name, sellingPrice: 0 };
           await db.upsertItemPrice(priceEntry.id, priceEntry.name, priceEntry.sellingPrice, businessId);
           setItemPrices(prev => [...prev, priceEntry]);
         }
@@ -105,7 +121,7 @@ export function useStockManagement({
     } else {
       // Auto-create price entry if new item
       if (!itemPrices.find(p => p.name === entry.name)) {
-        setItemPrices(prev => [...prev, { id: Date.now() + 1, name: entry.name, sellingPrice: 0 }]);
+        setItemPrices(prev => [...prev, { id: generateId(), name: entry.name, sellingPrice: 0 }]);
       }
     }
 
